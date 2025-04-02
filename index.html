@@ -170,7 +170,7 @@
                 // Determine model path based on selection
                 const modelPath = modelType === 'dense' 
                     ? 'dense_tfjs_model/model.json' 
-                    : 'cnn_ad_tfjs_model/model.json';
+                    : 'cnn_tfjs_model/model.json';
                 
                 // Load the model
                 model = await tf.loadGraphModel(modelPath);
