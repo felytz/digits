@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Handwritten Digit Recognition</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Digit Recognition</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="fabric.min.js"></script>
     <style>
@@ -18,259 +17,126 @@
             font-weight: bold;
             text-align: center;
             margin: 20px 0;
-            min-height: 80px;
-        }
-        .graph-container {
-            display: none;
-            margin-top: 30px;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        .graph-img {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        .model-info {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
         }
     </style>
 </head>
-<body class="bg-light">
-    <div class="container py-5">
-        <div class="text-center mb-5">
-            <h1 class="display-4">Handwritten Digit Recognition</h1>
-            <p class="lead">Draw a digit and see the neural network's prediction</p>
+<body>
+    <div style="max-width: 500px; margin: 0 auto; padding: 20px;">
+        <h1 style="text-align: center;">Digit Recognition</h1>
+        
+        <div style="text-align: center;">
+            <canvas id="canvas" width="280" height="280"></canvas>
+            <p><small>Draw a digit (0-9)</small></p>
         </div>
-
-        <div class="row justify-content-center">
-            <div class="col-md-8">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-body">
-                        <div class="model-info">
-                            <div class="row align-items-center">
-                                <div class="col-md-6">
-                                    <label for="model-select" class="form-label">Select Model:</label>
-                                    <select id="model-select" class="form-select">
-                                        <option value="dense">Dense Neural Network</option>
-                                        <option value="cnn">Convolutional Neural Network</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <div id="model-status" class="text-muted">Select a model to load</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="text-center mt-3">
-                            <div><small class="text-muted">Draw a digit in the box below</small></div>
-                            <canvas id="canvas" width="280" height="280"></canvas>
-                        </div>
-
-                        <div class="d-flex justify-content-center gap-3 mt-4">
-                            <button id="clear-btn" class="btn btn-outline-danger">Clear</button>
-                            <button id="predict-btn" class="btn btn-primary" disabled>Predict</button>
-                            <button id="graphs-btn" class="btn btn-info">Show Graphs</button>
-                        </div>
-
-                        <div id="result" class="mt-4"></div>
-                    </div>
-                </div>
-
-                <div id="graph-container" class="graph-container">
-                    <div class="text-center w-100 mb-3">
-                        <h4>Model Training Metrics</h4>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <img id="acc-graph" class="graph-img" src="" alt="Accuracy Graph">
-                            <div class="text-center mt-2">Accuracy</div>
-                        </div>
-                        <div class="col-md-6">
-                            <img id="loss-graph" class="graph-img" src="" alt="Loss Graph">
-                            <div class="text-center mt-2">Loss</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        
+        <div style="text-align: center; margin: 20px 0;">
+            <button id="clear" style="padding: 10px 20px;">Clear</button>
+            <button id="predict" style="padding: 10px 20px;">Predict</button>
+        </div>
+        
+        <div id="result">?</div>
+        
+        <div>
+            <label>Model:</label>
+            <select id="model-select">
+                <option value="dense">Dense</option>
+                <option value="cnn">CNN</option>
+            </select>
+            <span id="model-status"></span>
         </div>
     </div>
 
-    <script src="drawing.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Hidden canvas for processing -->
+    <canvas id="processing-canvas" width="28" height="28" style="display: none;"></canvas>
+
     <script>
-        // Global variables
+        // Initialize canvas
+        const canvas = new fabric.Canvas('canvas', {
+            isDrawingMode: true,
+            backgroundColor: 'black'
+        });
+        canvas.freeDrawingBrush.color = 'white';
+        canvas.freeDrawingBrush.width = 15;
+
+        // Model variables
         let model = null;
-        let currentModelType = null;
-        let canvas = null;
+        let currentModel = null;
 
-        // Initialize the drawing canvas
-        function initDrawingCanvas() {
-            canvas = new fabric.Canvas('canvas', {
-                isDrawingMode: true,
-                backgroundColor: 'black'
-            });
-            
-            canvas.freeDrawingBrush.color = 'white';
-            canvas.freeDrawingBrush.width = 15;
-        }
-
-        // Clear the canvas
-        function clearCanvas() {
+        // Clear canvas
+        document.getElementById('clear').addEventListener('click', () => {
             canvas.clear();
             canvas.backgroundColor = 'black';
-            document.getElementById('result').innerText = '';
-        }
+            document.getElementById('result').textContent = '?';
+        });
 
-        // Preprocess the canvas image for the model
-        function preprocessImage() {
-            // Create a temporary canvas for preprocessing
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            
-            // Set dimensions
-            tempCanvas.width = 28;
-            tempCanvas.height = 28;
-            
-            // Draw and scale the content
-            tempCtx.drawImage(canvas.getElement(), 0, 0, 28, 28);
-            
-            // Get image data
-            const imgData = tempCtx.getImageData(0, 0, 28, 28);
-            
-            // Convert to grayscale and normalize
-            const input = [];
-            for (let i = 0; i < imgData.data.length; i += 4) {
-                // Use alpha channel (where the white drawing is) and normalize to [0,1]
-                const pixel = imgData.data[i + 3] / 255;
-                input.push(pixel);
-            }
-            
-            // Reshape to match model input
-            return tf.tensor4d(input, [1, 28, 28, 1]);
-        }
-
-        // Load the selected TensorFlow.js model
+        // Load model
         async function loadModel(modelType) {
+            if (currentModel === modelType && model) return;
+            
+            document.getElementById('model-status').textContent = 'Loading...';
+            
             try {
-                document.getElementById('model-status').innerText = 'Loading model...';
-                document.getElementById('predict-btn').disabled = true;
-                
-                // Clear previous model if exists
-                if (model) {
-                    model.dispose();
-                }
-                
-                // Determine model path based on selection
                 const modelPath = modelType === 'dense' 
                     ? 'dense_tfjs_model/model.json' 
                     : 'cnn_tfjs_model/model.json';
                 
-                // Load the model
+                if (model) model.dispose();
                 model = await tf.loadGraphModel(modelPath);
-                currentModelType = modelType;
-                
-                document.getElementById('model-status').innerText = `${modelType.toUpperCase()} model loaded!`;
-                document.getElementById('predict-btn').disabled = false;
-                
-                console.log(`${modelType} model loaded successfully`);
-                return true;
+                currentModel = modelType;
+                document.getElementById('model-status').textContent = 'Loaded!';
             } catch (error) {
-                document.getElementById('model-status').innerText = `Failed to load ${modelType} model`;
-                console.error(`Error loading ${modelType} model:`, error);
-                return false;
+                document.getElementById('model-status').textContent = 'Error loading';
+                console.error(error);
             }
         }
 
-        // Make a prediction
+        // Process image for model input
+        function processImage() {
+            const procCanvas = document.getElementById('processing-canvas');
+            const ctx = procCanvas.getContext('2d');
+            
+            // Clear and draw
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, 28, 28);
+            ctx.drawImage(canvas.getElement(), 0, 0, 28, 28);
+            
+            // Get pixel data (already black background with white digit)
+            const imgData = ctx.getImageData(0, 0, 28, 28);
+            const input = new Float32Array(28 * 28);
+            
+            // Extract white pixels (no inversion needed)
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                // Use red channel (since we drew in white)
+                input[i / 4] = imgData.data[i] / 255; // Normalize to 0-1
+            }
+            
+            return tf.tensor4d(input, [1, 28, 28, 1]);
+        }
+
+        // Make prediction
         async function predict() {
             if (!model) {
-                alert('Please select and load a model first');
+                alert('Please wait for model to load');
                 return;
             }
             
-            try {
-                document.getElementById('result').innerText = '...';
-                
-                // Preprocess the image
-                const inputTensor = preprocessImage();
-                
-                // Make prediction - using executeAsync for graph models
-                const predictions = await model.executeAsync(inputTensor);
-                
-                // Get the results
-                const results = predictions.dataSync();
-                const predictedDigit = results.indexOf(Math.max(...results));
-                
-                // Display the result
-                document.getElementById('result').innerText = predictedDigit;
-                
-                // Clean up memory
-                inputTensor.dispose();
-                predictions.dispose();
-            } catch (error) {
-                document.getElementById('result').innerText = 'Error';
-                console.error('Prediction error:', error);
-            }
+            const tensor = processImage();
+            const prediction = await model.predict(tensor).data();
+            tensor.dispose();
+            
+            // Get highest confidence digit
+            const digit = prediction.indexOf(Math.max(...prediction));
+            document.getElementById('result').textContent = digit;
         }
 
-        // Toggle the graphs visibility
-        function toggleGraphs() {
-            const graphContainer = document.getElementById('graph-container');
-            const graphsBtn = document.getElementById('graphs-btn');
-            
-            if (graphContainer.style.display === 'none' || !graphContainer.style.display) {
-                if (!currentModelType) {
-                    alert('Please select a model first');
-                    return;
-                }
-                
-                // Set the correct graph images based on current model
-                const accImg = document.getElementById('acc-graph');
-                const lossImg = document.getElementById('loss-graph');
-                
-                if (currentModelType === 'dense') {
-                    accImg.src = 'graphs/dense_acc_graph.png';
-                    lossImg.src = 'graphs/dense_loss_graph.png';
-                } else {
-                    accImg.src = 'graphs/cnn_acc_graph.png';
-                    lossImg.src = 'graphs/cnn_loss_graph.png';
-                }
-                
-                graphContainer.style.display = 'block';
-                graphsBtn.textContent = 'Hide Graphs';
-            } else {
-                graphContainer.style.display = 'none';
-                graphsBtn.textContent = 'Show Graphs';
-            }
-        }
-
-        // Initialize the application
-        async function init() {
-            initDrawingCanvas();
-            
-            // Set up event listeners
-            document.getElementById('clear-btn').addEventListener('click', clearCanvas);
-            document.getElementById('predict-btn').addEventListener('click', predict);
-            document.getElementById('graphs-btn').addEventListener('click', toggleGraphs);
-            
-            // Load model when selection changes
-            document.getElementById('model-select').addEventListener('change', async (e) => {
-                await loadModel(e.target.value);
-            });
-            
-            // Load the default model (dense)
-            await loadModel('dense');
-        }
-
-        // Start the app when the page loads
-        window.addEventListener('load', init);
+        // Initialize
+        document.getElementById('predict').addEventListener('click', predict);
+        document.getElementById('model-select').addEventListener('change', (e) => {
+            loadModel(e.target.value);
+        });
+        
+        // Load default model
+        loadModel('dense');
     </script>
 </body>
 </html>
