@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digit Recognition</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="fabric.min.js"></script>
     <style>
@@ -17,76 +18,218 @@
             font-weight: bold;
             text-align: center;
             margin: 20px 0;
+            min-height: 8rem;
+        }
+        #model-info {
+            font-size: 1rem;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .model-active {
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.5);
+        }
+        #graphs-container {
+            display: none;
+            margin-top: 20px;
+        }
+        .model-graph {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .graph-row {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 15px;
+            padding-bottom: 10px;
+        }
+        .graph-col {
+            flex: 0 0 auto;
+            width: 48%;
+        }
+        .controls-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+        .main-title {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .canvas-container {
+            text-align: center;
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
-    <div style="max-width: 500px; margin: 0 auto; padding: 20px;">
-        <h1 style="text-align: center;">Digit Recognition</h1>
-        
-        <div style="text-align: center;">
-            <canvas id="canvas" width="280" height="280"></canvas>
-            <p><small>Draw a digit (0-9)</small></p>
+    <main>
+        <div class="px-4 py-2 my-2 text-center border-bottom">
+            <h1 class="display-5 fw-bold">Digit Recognition</h1>
+            <div class="col-lg-6 mx-auto">
+                <p class="lead mb-0">Draw a digit (0-9) to recognize</p>
+            </div>
         </div>
-        
-        <div style="text-align: center; margin: 20px 0;">
-            <button id="clear" style="padding: 10px 20px;">Clear</button>
-            <button id="predict" style="padding: 10px 20px;">Predict</button>
+
+        <div class="container mt-4">
+            <div class="row justify-content-center">
+                <div class="col-12 col-md-6 text-center">
+                    <!-- Drawing Canvas -->
+                    <div class="canvas-container">
+                        <canvas id="canvas" width="280" height="280"></canvas>
+                        <p class="text-muted"><small>Draw a digit (0-9)</small></p>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="controls-row">
+                        <button id="clear" class="btn btn-danger">Clear</button>
+                        <button id="predict" class="btn btn-success">Predict</button>
+                    </div>
+                    
+                    <!-- Prediction Output -->
+                    <div id="result">?</div>
+                    
+                    <!-- Model Selection -->
+                    <div class="d-flex justify-content-center gap-2 mb-3">
+                        <button id="btn-dense" class="btn btn-primary model-btn">Modelo Dense</button>
+                        <button id="btn-cnn" class="btn btn-outline-primary model-btn">Modelo CNN</button>
+                    </div>
+                    
+                    <!-- Model Info -->
+                    <div id="model-info" class="text-start">
+                        <div>Modelo cargado: <span id="model-name">Ninguno</span></div>
+                    </div>
+                    
+                    <!-- Controls -->
+                    <div class="controls-row">
+                        <button id="toggle-graphs" class="btn btn-info">Ver Gráficas</button>
+                    </div>
+
+                    <!-- Graphs Container -->
+                    <div id="graphs-container" class="mt-3">
+                        <div class="graph-row">
+                            <div class="graph-col">
+                                <img id="acc-graph" class="model-graph" src="" alt="Accuracy Graph">
+                            </div>
+                            <div class="graph-col">
+                                <img id="loss-graph" class="model-graph" src="" alt="Loss Graph">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        
-        <div id="result">?</div>
-        
-        <div>
-            <label>Model:</label>
-            <select id="model-select">
-                <option value="dense">Dense</option>
-                <option value="cnn">CNN</option>
-            </select>
-            <span id="model-status"></span>
-        </div>
-    </div>
+    </main>
 
     <!-- Hidden canvas for processing -->
     <canvas id="processing-canvas" width="28" height="28" style="display: none;"></canvas>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Initialize canvas
-        const canvas = new fabric.Canvas('canvas', {
+        // App State
+        const state = {
+            currentModel: null,
+            models: {
+                dense: null,
+                cnn: null
+            },
+            showGraphs: false
+        };
+
+        // DOM Elements
+        const elements = {
+            canvas: null, // Will be initialized with Fabric
+            result: document.getElementById('result'),
+            modelName: document.getElementById('model-name'),
+            btnDense: document.getElementById('btn-dense'),
+            btnCNN: document.getElementById('btn-cnn'),
+            clearBtn: document.getElementById('clear'),
+            predictBtn: document.getElementById('predict'),
+            toggleGraphs: document.getElementById('toggle-graphs'),
+            graphsContainer: document.getElementById('graphs-container'),
+            accGraph: document.getElementById('acc-graph'),
+            lossGraph: document.getElementById('loss-graph')
+        };
+
+        // Initialize canvas with Fabric
+        elements.canvas = new fabric.Canvas('canvas', {
             isDrawingMode: true,
-            backgroundColor: 'black'
+            backgroundColor: 'black',
+            width: 280,
+            height: 280
         });
-        canvas.freeDrawingBrush.color = 'white';
-        canvas.freeDrawingBrush.width = 15;
+        elements.canvas.freeDrawingBrush.color = 'white';
+        elements.canvas.freeDrawingBrush.width = 15;
 
-        // Model variables
-        let model = null;
-        let currentModel = null;
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!checkTFJS()) {
+                elements.result.textContent = "Tu navegador no soporta TensorFlow.js";
+                return;
+            }
 
-        // Clear canvas
-        document.getElementById('clear').addEventListener('click', () => {
-            canvas.clear();
-            canvas.backgroundColor = 'black';
-            document.getElementById('result').textContent = '?';
-        });
-
-        // Load model
-        async function loadModel(modelType) {
-            if (currentModel === modelType && model) return;
-            
-            document.getElementById('model-status').textContent = 'Loading...';
+            elements.result.textContent = "Inicializando...";
             
             try {
-                const modelPath = modelType === 'dense' 
-                    ? 'dense_tfjs_model/model.json' 
-                    : 'cnn_tfjs_model/model.json';
+                await tf.ready();
+                console.log('TensorFlow.js está listo');
                 
-                if (model) model.dispose();
-                model = await tf.loadGraphModel(modelPath);
-                currentModel = modelType;
-                document.getElementById('model-status').textContent = 'Loaded!';
+                // Load models
+                await loadModel('dense');
+                await loadModel('cnn');
+                
+                // Set default model
+                await switchModel('dense');
+                
+                setupEventListeners();
+                elements.result.textContent = "?";
+
             } catch (error) {
-                document.getElementById('model-status').textContent = 'Error loading';
-                console.error(error);
+                console.error("Initialization error:", error);
+                elements.result.textContent = `Error: ${error.message}`;
+            }
+        });
+
+        function checkTFJS() {
+            if (!tf || !tf.browser || !tf.loadGraphModel) {
+                alert('TensorFlow.js no está cargado correctamente. Recarga la página.');
+                return false;
+            }
+            return true;
+        }
+
+        async function loadModel(modelName) {
+            if (state.models[modelName]) return; // Ya cargado
+            
+            const modelPath = `${modelName}_tfjs_model/model.json`;
+            
+            try {
+                // Verificar que el modelo existe
+                const response = await fetch(modelPath);
+                if (!response.ok) {
+                    throw new Error(`Modelo no encontrado en ${modelPath}`);
+                }
+
+                // Cargar el modelo
+                const model = await tf.loadGraphModel(modelPath);
+                
+                // Verificar la forma de entrada
+                if (!model.inputs[0].shape) {
+                    console.warn(`El modelo ${modelName} no tiene forma de entrada definida, asignando [1,28,28,1]`);
+                    model.inputs[0].shape = [1, 28, 28, 1];
+                }
+                
+                state.models[modelName] = model;
+                console.log(`Modelo ${modelName} cargado correctamente`);
+                
+            } catch (error) {
+                console.error(`Error cargando el modelo ${modelName}:`, error);
+                throw error;
             }
         }
 
@@ -98,7 +241,7 @@
             // Clear and draw
             ctx.fillStyle = 'black';
             ctx.fillRect(0, 0, 28, 28);
-            ctx.drawImage(canvas.getElement(), 0, 0, 28, 28);
+            ctx.drawImage(elements.canvas.getElement(), 0, 0, 28, 28);
             
             // Get pixel data (already black background with white digit)
             const imgData = ctx.getImageData(0, 0, 28, 28);
@@ -115,28 +258,83 @@
 
         // Make prediction
         async function predict() {
-            if (!model) {
+            if (!state.currentModel || !state.models[state.currentModel]) {
                 alert('Please wait for model to load');
                 return;
             }
             
-            const tensor = processImage();
-            const prediction = await model.predict(tensor).data();
-            tensor.dispose();
-            
-            // Get highest confidence digit
-            const digit = prediction.indexOf(Math.max(...prediction));
-            document.getElementById('result').textContent = digit;
+            try {
+                const tensor = processImage();
+                const prediction = await state.models[state.currentModel].predict(tensor).data();
+                tensor.dispose();
+                
+                // Get highest confidence digit
+                const digit = prediction.indexOf(Math.max(...prediction));
+                elements.result.textContent = digit;
+            } catch (error) {
+                console.error("Prediction error:", error);
+                elements.result.textContent = "Error";
+            }
         }
 
-        // Initialize
-        document.getElementById('predict').addEventListener('click', predict);
-        document.getElementById('model-select').addEventListener('change', (e) => {
-            loadModel(e.target.value);
-        });
-        
-        // Load default model
-        loadModel('dense');
+        function setupEventListeners() {
+            elements.btnDense.addEventListener('click', () => switchModel('dense'));
+            elements.btnCNN.addEventListener('click', () => switchModel('cnn'));
+            elements.clearBtn.addEventListener('click', () => {
+                elements.canvas.clear();
+                elements.canvas.backgroundColor = 'black';
+                elements.result.textContent = '?';
+            });
+            elements.predictBtn.addEventListener('click', predict);
+            elements.toggleGraphs.addEventListener('click', toggleGraphs);
+        }
+
+        function toggleGraphs() {
+            state.showGraphs = !state.showGraphs;
+            
+            if (state.showGraphs) {
+                elements.toggleGraphs.textContent = "Ocultar Gráficas";
+                elements.graphsContainer.style.display = 'block';
+                updateGraphs();
+            } else {
+                elements.toggleGraphs.textContent = "Ver Gráficas";
+                elements.graphsContainer.style.display = 'none';
+            }
+        }
+
+        function updateGraphs() {
+            if (!state.currentModel) return;
+            
+            elements.accGraph.src = `graphs/${state.currentModel}_acc_graph.png`;
+            elements.lossGraph.src = `graphs/${state.currentModel}_loss_graph.png`;
+        }
+
+        async function switchModel(newModel) {
+            if (state.currentModel === newModel) return;
+            
+            try {
+                if (!state.models[newModel]) {
+                    await loadModel(newModel);
+                }
+                
+                state.currentModel = newModel;
+                elements.modelName.textContent = 
+                    newModel === 'dense' ? 'Dense' : 'CNN';
+                
+                document.querySelectorAll('.model-btn').forEach(btn => {
+                    btn.classList.toggle('btn-primary', btn.id === `btn-${newModel}`);
+                    btn.classList.toggle('btn-outline-primary', btn.id !== `btn-${newModel}`);
+                });
+                
+                if (state.showGraphs) {
+                    updateGraphs();
+                }
+                
+            } catch (error) {
+                console.error("Error switching model:", error);
+                elements.result.textContent = "Error al cambiar modelo";
+            }
+        }
     </script>
 </body>
 </html>
